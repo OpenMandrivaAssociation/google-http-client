@@ -1,12 +1,14 @@
 Name:		google-http-client
-Version:	1.42.2
+Version:	2.2.0
 Release:	1
 Summary:	Google HTTP client for Java
 Group:		Development/Java
 License:	Apache-2.0
 URL:		https://github.com/googleapis/google-http-java-client
-# Tag v1.42.2. The archive has no prebuilt jars or class files.
+# Tag v2.2.0. The archive has no prebuilt jars or class files.
 Source0:	https://github.com/googleapis/google-http-java-client/archive/refs/tags/v%{version}.tar.gz#/google-http-client-%{version}.tar.gz
+# Gradle pins all three artifacts at 1.42.2.
+Source1:	https://github.com/googleapis/google-http-java-client/archive/refs/tags/v1.42.2.tar.gz#/google-http-client-1.42.2.tar.gz
 
 BuildArch:	noarch
 BuildRequires:	java-current-devel
@@ -22,71 +24,38 @@ BuildRequires:	mvn(com.google.j2objc:j2objc-annotations)
 BuildRequires:	mvn(io.opencensus:opencensus-api)
 BuildRequires:	mvn(io.opencensus:opencensus-contrib-http-util)
 BuildRequires:	mvn(com.google.code.gson:gson)
+BuildRequires:	mvn(com.google.errorprone:error_prone_annotations)
 
 %description
 The Google HTTP client library %{version}: the core client, the Apache
-HttpClient 4 transport, and the Gson JSON factory. Guava 33.6.0-jre is
-class version 53, so these classes are Java 11. The library version
-string is written into google-http-client.properties at build time.
+HttpClient 4 transport, and the Gson JSON factory. The 1.42.2 jars stay
+installed beside them. Guava is class version 53, so these classes are
+Java 11. The library version string is written into
+google-http-client.properties at build time.
 
 %prep
 %autosetup -n google-http-java-client-%{version}
+tar -xf %{SOURCE1}
 find . \( -name '*.jar' -o -name '*.class' -o -name '*.so' -o -name '*.node' -o -name '*.wasm' \) -delete
 sed -i 's/${project.version}/%{version}/' google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties
 grep -F -q 'google-http-client.version=%{version}' google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties
+sed -i 's/${project.version}/1.42.2/' google-http-java-client-1.42.2/google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties
+grep -F -q 'google-http-client.version=1.42.2' google-http-java-client-1.42.2/google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties
 
 %build
 set -eo pipefail
-CP=%{_javadir}/httpcomponents/httpclient.jar:%{_javadir}/httpcomponents/httpcore.jar:%{_javadir}/javax.annotation.jar:%{_javadir}/guava.jar:%{_javadir}/failureaccess.jar:%{_javadir}/j2objc-annotations.jar:%{_javadir}/opencensus-api.jar:%{_javadir}/opencensus-contrib-http-util.jar:%{_javadir}/gson-2.14.0.jar
+CP=%{_javadir}/httpcomponents/httpclient.jar:%{_javadir}/httpcomponents/httpcore.jar:%{_javadir}/javax.annotation.jar:%{_javadir}/guava.jar:%{_javadir}/failureaccess.jar:%{_javadir}/j2objc-annotations.jar:%{_javadir}/opencensus-api.jar:%{_javadir}/opencensus-contrib-http-util.jar:%{_javadir}/gson-2.14.0.jar:%{_javadir}/error_prone_annotations.jar
 
-find google-http-client/src/main/java -name '*.java' > core.list
-test "$(wc -l < core.list)" -eq 157
-mkdir -p core-classes
-javac --release 11 -encoding UTF-8 -Xlint:-options -cp "$CP" -d core-classes @core.list
-mkdir -p core-classes/com/google/api/client/http
-/bin/cp -f google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties core-classes/com/google/api/client/http/
-cat > core.mf << 'EOF'
-Manifest-Version: 1.0
-Automatic-Module-Name: com.google.api.client
-
-EOF
-jar cfm google-http-client.jar core.mf -C core-classes .
-jar i google-http-client.jar
-javap -verbose -cp google-http-client.jar com.google.api.client.http.HttpRequest | grep -F 'major version: 55'
-
-find google-http-client-apache-v2/src/main/java -name '*.java' > v2.list
-test "$(wc -l < v2.list)" -eq 6
-mkdir -p v2-classes
-javac --release 11 -encoding UTF-8 -Xlint:-options \
-	-cp "google-http-client.jar:$CP" -d v2-classes @v2.list
-cat > v2.mf << 'EOF'
-Manifest-Version: 1.0
-Automatic-Module-Name: com.google.api.client.http.apache.v2
-
-EOF
-jar cfm google-http-client-apache-v2.jar v2.mf -C v2-classes .
-jar i google-http-client-apache-v2.jar
-
-find google-http-client-gson/src/main/java -name '*.java' > gson.list
-test "$(wc -l < gson.list)" -eq 4
-mkdir -p gson-classes
-javac --release 11 -encoding UTF-8 -Xlint:-options \
-	-cp "google-http-client.jar:$CP" -d gson-classes @gson.list
-cat > gson.mf << 'EOF'
-Manifest-Version: 1.0
-Automatic-Module-Name: com.google.api.client.json.gson
-
-EOF
-jar cfm google-http-client-gson.jar gson.mf -C gson-classes .
-jar i google-http-client-gson.jar
-
-cat > google-http-client.pom << 'EOF'
+write_poms() {
+	ver="$1"
+	dest="$2"
+	cat > "$dest/google-http-client.pom" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.google.http-client</groupId>
   <artifactId>google-http-client</artifactId>
-  <version>1.42.2</version>
+  <version>$ver</version>
   <name>Google HTTP Client Library</name>
   <description>Google HTTP client for Java</description>
   <licenses>
@@ -133,14 +102,13 @@ cat > google-http-client.pom << 'EOF'
   </dependencies>
 </project>
 EOF
-
-cat > google-http-client-apache-v2.pom << 'EOF'
+	cat > "$dest/google-http-client-apache-v2.pom" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.google.http-client</groupId>
   <artifactId>google-http-client-apache-v2</artifactId>
-  <version>1.42.2</version>
+  <version>$ver</version>
   <name>Apache HTTP transport for the Google HTTP Client</name>
   <description>Apache HttpClient 4 transport</description>
   <licenses>
@@ -152,7 +120,7 @@ cat > google-http-client-apache-v2.pom << 'EOF'
     <dependency>
       <groupId>com.google.http-client</groupId>
       <artifactId>google-http-client</artifactId>
-      <version>1.42.2</version>
+      <version>$ver</version>
     </dependency>
     <dependency>
       <groupId>org.apache.httpcomponents</groupId>
@@ -167,14 +135,13 @@ cat > google-http-client-apache-v2.pom << 'EOF'
   </dependencies>
 </project>
 EOF
-
-cat > google-http-client-gson.pom << 'EOF'
+	cat > "$dest/google-http-client-gson.pom" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.google.http-client</groupId>
   <artifactId>google-http-client-gson</artifactId>
-  <version>1.42.2</version>
+  <version>$ver</version>
   <name>Gson JSON factory for the Google HTTP Client</name>
   <description>Gson binding for the Google HTTP client</description>
   <licenses>
@@ -186,7 +153,7 @@ cat > google-http-client-gson.pom << 'EOF'
     <dependency>
       <groupId>com.google.http-client</groupId>
       <artifactId>google-http-client</artifactId>
-      <version>1.42.2</version>
+      <version>$ver</version>
     </dependency>
     <dependency>
       <groupId>com.google.code.gson</groupId>
@@ -196,21 +163,96 @@ cat > google-http-client-gson.pom << 'EOF'
   </dependencies>
 </project>
 EOF
+}
+
+build_one() {
+	root="$1"
+	ver="$2"
+	ncore="$3"
+	dest="$4"
+	mkdir -p "$dest"
+	find "$root/google-http-client/src/main/java" -name '*.java' > "$dest/core.list"
+	test "$(wc -l < "$dest/core.list")" -eq "$ncore"
+	mkdir -p "$dest/core-classes"
+	javac --release 11 -encoding UTF-8 -Xlint:-options -cp "$CP" -d "$dest/core-classes" @"$dest/core.list"
+	mkdir -p "$dest/core-classes/com/google/api/client/http"
+	/bin/cp -f "$root/google-http-client/src/main/resources/com/google/api/client/http/google-http-client.properties" "$dest/core-classes/com/google/api/client/http/"
+	cat > "$dest/core.mf" << 'EOF'
+Manifest-Version: 1.0
+Automatic-Module-Name: com.google.api.client
+
+EOF
+	jar cfm "$dest/google-http-client.jar" "$dest/core.mf" -C "$dest/core-classes" .
+	jar i "$dest/google-http-client.jar"
+	javap -verbose -cp "$dest/google-http-client.jar" com.google.api.client.http.HttpRequest | grep -F 'major version: 55'
+
+	find "$root/google-http-client-apache-v2/src/main/java" -name '*.java' > "$dest/v2.list"
+	test "$(wc -l < "$dest/v2.list")" -eq 6
+	mkdir -p "$dest/v2-classes"
+	javac --release 11 -encoding UTF-8 -Xlint:-options \
+		-cp "$dest/google-http-client.jar:$CP" -d "$dest/v2-classes" @"$dest/v2.list"
+	cat > "$dest/v2.mf" << 'EOF'
+Manifest-Version: 1.0
+Automatic-Module-Name: com.google.api.client.http.apache.v2
+
+EOF
+	jar cfm "$dest/google-http-client-apache-v2.jar" "$dest/v2.mf" -C "$dest/v2-classes" .
+	jar i "$dest/google-http-client-apache-v2.jar"
+
+	find "$root/google-http-client-gson/src/main/java" -name '*.java' > "$dest/gson.list"
+	test "$(wc -l < "$dest/gson.list")" -eq 4
+	mkdir -p "$dest/gson-classes"
+	javac --release 11 -encoding UTF-8 -Xlint:-options \
+		-cp "$dest/google-http-client.jar:$CP" -d "$dest/gson-classes" @"$dest/gson.list"
+	cat > "$dest/gson.mf" << 'EOF'
+Manifest-Version: 1.0
+Automatic-Module-Name: com.google.api.client.json.gson
+
+EOF
+	jar cfm "$dest/google-http-client-gson.jar" "$dest/gson.mf" -C "$dest/gson-classes" .
+	jar i "$dest/google-http-client-gson.jar"
+	write_poms "$ver" "$dest"
+}
+
+build_one google-http-java-client-1.42.2 1.42.2 157 out142
+build_one . %{version} 160 out
 
 %install
-sysjar install --buildroot %{buildroot} \
-	--artifact google-http-client.pom:google-http-client.jar \
-	--file-name google-http-client \
-	--filelist .mfiles-core
-sysjar install --buildroot %{buildroot} \
-	--artifact google-http-client-apache-v2.pom:google-http-client-apache-v2.jar \
-	--file-name google-http-client-apache-v2 \
-	--filelist .mfiles-v2
-sysjar install --buildroot %{buildroot} \
-	--artifact google-http-client-gson.pom:google-http-client-gson.jar \
-	--file-name google-http-client-gson \
-	--filelist .mfiles-gson
-awk '!seen[$0]++' .mfiles-core .mfiles-v2 .mfiles-gson > .mfiles
+set -eo pipefail
+for art in google-http-client google-http-client-apache-v2 google-http-client-gson; do
+	sysjar install --buildroot %{buildroot} \
+		--artifact "out142/$art.pom:out142/$art.jar" \
+		--file-name "$art-1.42.2" \
+		--filelist ".mfiles142-$art"
+	/bin/mv "%{buildroot}/usr/share/sysjar/index/com.google.http-client/$art.sysjar" \
+		"%{buildroot}/usr/share/sysjar/index/com.google.http-client/$art-1.42.2.sysjar"
+	sed -i "s|/usr/share/sysjar/index/com.google.http-client/$art\\.sysjar|/usr/share/sysjar/index/com.google.http-client/$art-1.42.2.sysjar|" ".mfiles142-$art"
+	idx142="%{buildroot}/usr/share/sysjar/index/com.google.http-client/$art-1.42.2.sysjar"
+	test -s "$idx142"
+	grep -F -q '"version": "1.42.2"' "$idx142"
+	grep -F -q "\"artifactId\": \"$art\"" "$idx142"
+done
+for art in google-http-client google-http-client-apache-v2 google-http-client-gson; do
+	sysjar install --buildroot %{buildroot} \
+		--artifact "out/$art.pom:out/$art.jar" \
+		--file-name "$art" \
+		--filelist ".mfiles-$art"
+	idx="%{buildroot}/usr/share/sysjar/index/com.google.http-client/$art.sysjar"
+	test -s "$idx"
+	grep -F -q '"version": "%{version}"' "$idx"
+	grep -F -q "\"artifactId\": \"$art\"" "$idx"
+	test -s "%{buildroot}%{_javadir}/$art.jar"
+	test -s "%{buildroot}%{_javadir}/$art-1.42.2.jar"
+done
+: > .mfiles
+for art in google-http-client google-http-client-apache-v2 google-http-client-gson; do
+	while IFS= read -r line; do
+		grep -qxF -- "$line" .mfiles || printf '%s\n' "$line" >> .mfiles
+	done < ".mfiles-$art"
+	while IFS= read -r line; do
+		grep -qxF -- "$line" .mfiles || printf '%s\n' "$line" >> .mfiles
+	done < ".mfiles142-$art"
+done
 
 %check
 set -eo pipefail
@@ -223,11 +265,12 @@ import com.google.api.client.json.JsonParser;
 import com.google.api.client.json.gson.GsonFactory;
 public class Smoke {
 	public static void main(String[] args) throws Exception {
+		String expect = args[0];
 		GenericUrl url = new GenericUrl("https://example.com/gradle");
 		if (!"example.com".equals(url.getHost())) {
 			throw new RuntimeException("host " + url.getHost());
 		}
-		if (!"1.42.2".equals(HttpRequest.VERSION)) {
+		if (!expect.equals(HttpRequest.VERSION)) {
 			throw new RuntimeException("version " + HttpRequest.VERSION);
 		}
 		ApacheHttpTransport transport = new ApacheHttpTransport();
@@ -246,17 +289,31 @@ public class Smoke {
 	}
 }
 EOF
-CORE=%{buildroot}%{_javadir}/google-http-client.jar
-V2=%{buildroot}%{_javadir}/google-http-client-apache-v2.jar
-GSON=%{buildroot}%{_javadir}/google-http-client-gson.jar
-test -f "$CORE"
-test -f "$V2"
-test -f "$GSON"
-CP="$CORE:$V2:$GSON:%{_javadir}/httpcomponents/httpclient.jar:%{_javadir}/httpcomponents/httpcore.jar:%{_javadir}/commons-logging.jar:%{_javadir}/javax.annotation.jar:%{_javadir}/guava.jar:%{_javadir}/failureaccess.jar:%{_javadir}/j2objc-annotations.jar:%{_javadir}/opencensus-api.jar:%{_javadir}/opencensus-contrib-http-util.jar:%{_javadir}/gson-2.14.0.jar"
-javac --release 11 -encoding UTF-8 -Xlint:-options -cp "$CP" -d check check/Smoke.java
-java -cp "check:$CP" Smoke > check/out.txt
-cat check/out.txt
-grep -F -q 'ghttp_ok 1.42.2 /gradle k gradle' check/out.txt
+DEPS=%{_javadir}/httpcomponents/httpclient.jar:%{_javadir}/httpcomponents/httpcore.jar:%{_javadir}/commons-logging.jar:%{_javadir}/javax.annotation.jar:%{_javadir}/guava.jar:%{_javadir}/failureaccess.jar:%{_javadir}/j2objc-annotations.jar:%{_javadir}/opencensus-api.jar:%{_javadir}/opencensus-contrib-http-util.jar:%{_javadir}/gson-2.14.0.jar:%{_javadir}/error_prone_annotations.jar
+run_check() {
+	ver="$1"
+	core="$2"
+	v2="$3"
+	gson="$4"
+	test -f "$core"
+	test -f "$v2"
+	test -f "$gson"
+	/bin/rm -rf "check/$ver"
+	mkdir -p "check/$ver"
+	classpath="$core:$v2:$gson:$DEPS"
+	javac --release 11 -encoding UTF-8 -Xlint:-options -cp "$classpath" -d "check/$ver" check/Smoke.java
+	java -cp "check/$ver:$classpath" Smoke "$ver" > "check/$ver/out.txt"
+	cat "check/$ver/out.txt"
+	grep -F -q "ghttp_ok $ver /gradle k gradle" "check/$ver/out.txt"
+}
+run_check %{version} \
+	%{buildroot}%{_javadir}/google-http-client.jar \
+	%{buildroot}%{_javadir}/google-http-client-apache-v2.jar \
+	%{buildroot}%{_javadir}/google-http-client-gson.jar
+run_check 1.42.2 \
+	%{buildroot}%{_javadir}/google-http-client-1.42.2.jar \
+	%{buildroot}%{_javadir}/google-http-client-apache-v2-1.42.2.jar \
+	%{buildroot}%{_javadir}/google-http-client-gson-1.42.2.jar
 
 %files -f .mfiles
 %doc LICENSE README.md
